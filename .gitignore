@@ -29,4 +29,5 @@ Thumbs.db
 
 # Temporary files
 *.tmp
-*.temp
+*.tempsupabase/seed-data/
+.envrc
