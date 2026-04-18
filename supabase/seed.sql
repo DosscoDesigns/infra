@@ -71,3 +71,37 @@ INSERT INTO sync_state (table_name, status, notes) VALUES
   ('price_rules', 'active', 'Same as events'),
   ('suppliers', 'active', 'Rarely changes'),
   ('product_categories', 'active', 'Rarely changes');
+
+-- ============================================================================
+-- Decoration Surcharges (must be after product_categories)
+-- ============================================================================
+
+-- Embroidery surcharges (iDex)
+INSERT INTO decoration_surcharges (decoration_type, description, amount, product_category_id)
+SELECT 'embroidery', 'Bags surcharge', 1.00, id FROM product_categories WHERE name = 'BAGS';
+
+INSERT INTO decoration_surcharges (decoration_type, description, amount, product_category_id)
+SELECT 'embroidery', 'Jackets surcharge (2-in-1/3-in-1)', 1.00, id FROM product_categories WHERE name = 'JACKETS';
+
+INSERT INTO decoration_surcharges (decoration_type, description, amount)
+VALUES ('embroidery', 'Metallic thread surcharge', 0.25);
+
+-- Screen print surcharges (iDex) — per location
+INSERT INTO decoration_surcharges (decoration_type, description, amount, product_category_id)
+SELECT 'screen print', 'Bags/aprons/towels surcharge', 0.50, id FROM product_categories WHERE name = 'BAGS';
+
+INSERT INTO decoration_surcharges (decoration_type, description, amount, product_category_id)
+SELECT 'screen print', 'Sweatshirts/hoodies surcharge', 0.50, id FROM product_categories WHERE name = 'SWEATERS';
+
+INSERT INTO decoration_surcharges (decoration_type, description, amount, product_category_id)
+SELECT 'screen print', 'Shorts/pants surcharge', 0.50, id FROM product_categories WHERE name = 'SHORTS';
+
+-- DTF surcharges (iDex)
+INSERT INTO decoration_surcharges (decoration_type, description, amount, product_category_id)
+SELECT 'dtf', 'Sweatshirts/hoodies surcharge', 0.50, id FROM product_categories WHERE name = 'SWEATERS';
+
+INSERT INTO decoration_surcharges (decoration_type, description, amount, product_category_id)
+SELECT 'dtf', 'Bags surcharge', 0.50, id FROM product_categories WHERE name = 'BAGS';
+
+INSERT INTO decoration_surcharges (decoration_type, description, amount, product_category_id)
+SELECT 'dtf', 'Shorts/pants surcharge', 0.50, id FROM product_categories WHERE name = 'SHORTS';
