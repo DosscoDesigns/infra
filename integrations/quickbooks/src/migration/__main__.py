@@ -12,7 +12,7 @@ import sys
 
 from qbo import QBOClient
 
-from . import accounts, customers, items, wizard_cleanup
+from . import accounts, ar_ap, customers, items, opening_balances, reconcile, wizard_cleanup
 
 
 STEPS = ["wizard-cleanup", "accounts", "customers", "items", "opening-balances", "ar-ap", "reconcile"]
@@ -50,11 +50,39 @@ def step_items(client: QBOClient, *, apply: bool) -> int:
     return 0
 
 
+def step_opening_balances(client: QBOClient, *, apply: bool) -> int:
+    rows, as_of = opening_balances.parse_wave_tb()
+    lines, warnings = opening_balances.build_je_lines(rows)
+    balancer = opening_balances.balance_to_opening_equity(lines)
+    opening_balances.print_plan(lines, balancer, as_of, warnings)
+    if apply:
+        opening_balances.apply_plan(client, lines, balancer, as_of)
+    return 0
+
+
+def step_ar_ap(client: QBOClient, *, apply: bool) -> int:
+    invoices = ar_ap.plan_open_ar(client)
+    bills = ar_ap.plan_open_ap(client)
+    ar_ap.print_plan(invoices, bills)
+    if apply:
+        ar_ap.apply_ar(client, invoices)
+        ar_ap.apply_ap(client, bills)
+    return 0
+
+
+def step_reconcile(client: QBOClient, *, apply: bool) -> int:
+    reconcile.reconcile(client)
+    return 0
+
+
 STEP_DISPATCH = {
     "wizard-cleanup": step_wizard_cleanup,
     "accounts": step_accounts,
     "customers": step_customers,
     "items": step_items,
+    "opening-balances": step_opening_balances,
+    "ar-ap": step_ar_ap,
+    "reconcile": step_reconcile,
 }
 
 
