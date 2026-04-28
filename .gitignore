@@ -31,3 +31,6 @@ Thumbs.db
 *.tmp
 *.temp
 .envrc
+
+# Debug/test/scratch files (per global CLAUDE.md)
+TEMP/
