@@ -80,8 +80,8 @@ def main() -> int:
     client = QBOClient()
 
     print("Looking up customers...")
-    embark_id = _find_customer(client, "EMBARK")
-    rcc_id = _find_customer(client, "RCC")
+    embark_id = _find_customer(client, "Embark Church")
+    rcc_id = _find_customer(client, "River Christian Church")
 
     vendor = client._request("GET", f"vendor/{VENDOR_ID}")["Vendor"]
     pay_acct = client._request("GET", f"account/{PAYMENT_ACCOUNT_ID}")["Account"]
