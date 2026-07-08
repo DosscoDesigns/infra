@@ -6,3 +6,15 @@ __pycache__/
 *.log
 plans/runs/
 .pytest_cache/
+receipts/
+
+# Bookkeeping scripts: the per-transaction one-offs (create_<vendor>_<date>.py,
+# process_*, match_<dated>, etc.) are run-once actions — the QBO transactions and
+# receipts/ are the system of record, so they live local-only. Track only the
+# reusable client/utilities/templates, allowlisted below.
+src/bookkeeping/*
+!src/bookkeeping/__init__.py
+!src/bookkeeping/email_to_pdf.py
+!src/bookkeeping/create_invoice.py
+!src/bookkeeping/create_sanmar_expense.py
+!src/bookkeeping/match_sanmar_invoices.py

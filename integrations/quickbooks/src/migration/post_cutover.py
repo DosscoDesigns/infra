@@ -314,6 +314,96 @@ def post_fldor_carryover(client: QBOClient) -> None:
     print(f"  ✓ Carryover JE posted Id={result['Id']} (DR FL DOR Payable 56.19 / CR FL Sales Tax Carryover 56.19)")
 
 
+def post_sanmar_to_cc(client: QBOClient) -> None:
+    """Convert 'SanMar A/P (Net 30)' from Other Current Liability to a Credit
+    Card type account so QBO's Expense form recognizes it as a payment method.
+
+    QBO doesn't allow AccountType changes on existing accounts, so we create a
+    new 'SanMar Terms' Credit Card account, migrate the balance via JE, and
+    deactivate the old liability account.
+    """
+    note = "Convert SanMar A/P (Net 30) → SanMar Terms credit card type"
+    if _je_already_posted(client, "SanMar Terms credit card"):
+        print("  ⏭ SanMar Terms conversion already posted — skipping")
+        return
+
+    accts = _accounts(client)
+    old = accts.get("SanMar A/P (Net 30)")
+    if not old:
+        print("  ⚠ Old 'SanMar A/P (Net 30)' account not found — nothing to convert")
+        return
+
+    # Create the new Credit Card account
+    new = client.find_by_name("Account", "SanMar Terms")
+    if not new:
+        payload = {
+            "Name": "SanMar Terms",
+            "AccountType": "Credit Card",
+            "AccountSubType": "CreditCard",
+            "Description": "SanMar Net 30 trade credit (converted 2026-05-02 from liability)",
+        }
+        new = client.create("Account", payload)
+        print(f"  ✓ Created Credit Card account 'SanMar Terms' Id={new['Id']}")
+    new_id = new["Id"]
+
+    # Pull current balance of the old account
+    tb = client._request("GET", "reports/TrialBalance",
+                       params={"start_date": "2026-05-02", "end_date": "2026-05-02",
+                               "accounting_method": "Accrual"})
+    old_balance: Optional[float] = None
+    for row in tb.get("Rows", {}).get("Row", []):
+        cols = row.get("ColData", [])
+        if len(cols) >= 3 and cols[0].get("value") == "SanMar A/P (Net 30)":
+            d = float(cols[1].get("value", "") or "0")
+            c = float(cols[2].get("value", "") or "0")
+            old_balance = c - d  # liability is credit-positive
+            break
+    if old_balance is None or old_balance <= 0:
+        print(f"  ⚠ Could not determine SanMar A/P balance (got {old_balance}) — aborting migration")
+        return
+    print(f"  → Migrating ${old_balance:,.2f} from SanMar A/P (Net 30) to SanMar Terms")
+
+    je = {
+        "TxnDate": "2026-05-02",
+        "PrivateNote": note,
+        "Line": [
+            {
+                "DetailType": "JournalEntryLineDetail",
+                "Amount": old_balance,
+                "Description": "Zero out old SanMar A/P (Net 30) liability",
+                "JournalEntryLineDetail": {
+                    "PostingType": "Debit",
+                    "AccountRef": {"value": old["Id"]},
+                },
+            },
+            {
+                "DetailType": "JournalEntryLineDetail",
+                "Amount": old_balance,
+                "Description": "Migrate balance to SanMar Terms credit card",
+                "JournalEntryLineDetail": {
+                    "PostingType": "Credit",
+                    "AccountRef": {"value": new_id},
+                },
+            },
+        ],
+    }
+    result = client.create("JournalEntry", je)
+    print(f"  ✓ Migration JE posted Id={result['Id']}")
+
+    # Deactivate the old account
+    fresh = client.find_by_name("Account", "SanMar A/P (Net 30)")
+    if fresh:
+        deact = {
+            "Id": fresh["Id"],
+            "SyncToken": fresh["SyncToken"],
+            "Name": fresh["Name"],
+            "Active": False,
+            "sparse": True,
+        }
+        client.update("Account", deact)
+        print(f"  ✓ Deactivated old account 'SanMar A/P (Net 30)' Id={fresh['Id']}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--obe", action="store_true")
@@ -323,11 +413,15 @@ def main() -> int:
                         help="Move FL DOR $222.44 reduction from 4/30 to 3/31 so Q2 AST is clean")
     parser.add_argument("--fldor-carryover", action="store_true",
                         help="Move pre-migration $56.19 to a non-AST liability account so AST reports cleanly")
+    parser.add_argument("--sanmar-to-cc", action="store_true",
+                        help="Convert SanMar A/P (Net 30) liability into a Credit Card type account so it shows up as a payment method")
     parser.add_argument("--all", action="store_true")
     args = parser.parse_args()
 
-    if not (args.obe or args.natca_payment or args.mac_mini_q1 or args.fldor_reattribute or args.fldor_carryover or args.all):
-        parser.error("specify at least one of --obe / --natca-payment / --mac-mini-q1 / --fldor-reattribute / --fldor-carryover / --all")
+    if not (args.obe or args.natca_payment or args.mac_mini_q1 or args.fldor_reattribute
+            or args.fldor_carryover or args.sanmar_to_cc or args.all):
+        parser.error("specify at least one of --obe / --natca-payment / --mac-mini-q1 / "
+                     "--fldor-reattribute / --fldor-carryover / --sanmar-to-cc / --all")
 
     client = QBOClient()
     if args.all or args.obe:
@@ -340,6 +434,8 @@ def main() -> int:
         post_fldor_reattribute(client)
     if args.all or args.fldor_carryover:
         post_fldor_carryover(client)
+    if args.all or args.sanmar_to_cc:
+        post_sanmar_to_cc(client)
     return 0
 
 

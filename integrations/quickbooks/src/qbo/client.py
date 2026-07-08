@@ -5,6 +5,8 @@ migration modules check for existing records before creating, since QBO has
 no upsert primitive."""
 from __future__ import annotations
 
+import json
+import os
 import time
 from typing import Any, Optional
 
@@ -56,7 +58,9 @@ class QBOClient:
         json: Optional[dict[str, Any]] = None,
     ) -> dict:
         url = f"{self.base_url}/{path.lstrip('/')}"
-        params = {**(params or {}), "minorversion": MINOR_VERSION}
+        # Default minorversion first so a caller-supplied one (e.g. "75" for
+        # enhanced custom fields) takes precedence.
+        params = {"minorversion": MINOR_VERSION, **(params or {})}
 
         last_exc: Optional[Exception] = None
         for attempt in range(_MAX_RETRIES):
@@ -129,6 +133,86 @@ class QBOClient:
             params={"operation": "delete"},
             json={"Id": qbo_id, "SyncToken": sync_token},
         )
+
+    def sparse_update(self, entity: str, qbo_id: str, sync_token: str, fields: dict) -> dict:
+        """Partial update — only the supplied fields change. Requires `Id` + `SyncToken`."""
+        payload = {"Id": qbo_id, "SyncToken": sync_token, "sparse": True, **fields}
+        return self._request("POST", entity.lower(), json=payload)[entity]
+
+    def upload_attachable(
+        self, file_path: str, *, entity_type: str, entity_id: str,
+        content_type: str = "application/pdf", file_name: Optional[str] = None,
+        note: Optional[str] = None,
+    ) -> dict:
+        """Upload a file and link it to a QBO transaction (Purchase, Bill, Invoice, etc.).
+
+        Returns the created Attachable record.
+        """
+        file_name = file_name or os.path.basename(file_path)
+        metadata = {
+            "AttachableRef": [{"EntityRef": {"type": entity_type, "value": entity_id}}],
+            "FileName": file_name,
+            "ContentType": content_type,
+        }
+        if note:
+            metadata["Note"] = note
+
+        url = f"{self.base_url}/upload"
+        params = {"minorversion": MINOR_VERSION}
+        headers = {
+            "Authorization": f"Bearer {self.tokens.access_token()}",
+            "Accept": "application/json",
+        }
+        with open(file_path, "rb") as fh:
+            files = {
+                "file_metadata_0": (None, json.dumps(metadata), "application/json"),
+                "file_content_0": (file_name, fh, content_type),
+            }
+            resp = self._session.post(url, params=params, files=files,
+                                      headers=headers, timeout=120)
+
+        try:
+            body = resp.json() if resp.text else {}
+        except ValueError:
+            body = {"_raw": resp.text}
+
+        if resp.status_code >= 400:
+            raise QBOError(resp.status_code, body)
+
+        # Successful upload returns AttachableResponse[].Attachable
+        ar = body.get("AttachableResponse", [])
+        if ar and isinstance(ar, list) and ar[0].get("Attachable"):
+            return ar[0]["Attachable"]
+        # Some failures show up here even with 2xx status
+        if ar and ar[0].get("Fault"):
+            raise QBOError(0, body, str(ar[0]["Fault"]))
+        return body
+
+    # Modern ("enhanced") custom fields are INVISIBLE to the default v3 path —
+    # they need minorversion>=75 + include=enhancedAllCustomFields, and are keyed
+    # by the numeric tail of the App-Foundations GraphQL node id (e.g. "1000000001"
+    # for DD's "Project" field). The legacy CustomField slots (DefinitionId 1-3)
+    # are a SEPARATE system and won't reach them.
+    ENHANCED_CF_PARAMS = {"minorversion": "75", "include": "enhancedAllCustomFields"}
+
+    def set_invoice_custom_fields(self, invoice_id: str, fields: list[dict]) -> dict:
+        """Set enhanced/modern custom field values on an invoice.
+
+        `fields` is a list of {"DefinitionId": "1000000001", "StringValue": "..."}.
+        Type defaults to StringType. Returns the updated Invoice.
+        """
+        inv = self._request(
+            "GET", f"invoice/{invoice_id}", params=self.ENHANCED_CF_PARAMS
+        )["Invoice"]
+        payload = {
+            "Id": invoice_id,
+            "SyncToken": inv["SyncToken"],
+            "sparse": True,
+            "CustomField": [{"Type": "StringType", **f} for f in fields],
+        }
+        return self._request(
+            "POST", "invoice", params=self.ENHANCED_CF_PARAMS, json=payload
+        )["Invoice"]
 
     def find_by_name(self, entity: str, name: str, name_field: str = "Name") -> Optional[dict]:
         # Escape single quotes for QBO SQL
