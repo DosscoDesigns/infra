@@ -25,7 +25,7 @@ TABLES=(
   decorations decoration_sets decoration_set_items
   price_rules price_rule_products org_products
   orders order_item_batches order_items payments
-  inventory pricing_config tax_config sync_state airtable_id_map
+  inventory pricing_config tax_config
   vendor_price_tables decoration_surcharges
 )
 

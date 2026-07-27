@@ -53,26 +53,6 @@ INSERT INTO tax_config (state, state_rate, county_surtax, has_nexus, nexus_type,
   ('VA', 0.0530, 0, false, NULL, '1 client, below threshold. Monitor.');
 
 -- ============================================================================
--- Sync State — Initialize all syncable tables
--- ============================================================================
-
-INSERT INTO sync_state (table_name, status, notes) VALUES
-  ('orgs', 'active', 'Rarely changes'),
-  ('products', 'active', 'SanMar sync writes here'),
-  ('variants', 'active', 'SanMar sync writes here'),
-  ('customers', 'active', 'Until customer site live'),
-  ('orders', 'active', 'Until order mgmt built'),
-  ('order_items', 'active', 'Same as orders'),
-  ('order_item_batches', 'active', 'Same as orders'),
-  ('payments', 'active', 'Stripe webhook writes here'),
-  ('decorations', 'active', 'Until decoration mgmt built'),
-  ('decoration_sets', 'active', 'Same as decorations'),
-  ('events', 'active', 'Until admin settings built'),
-  ('price_rules', 'active', 'Same as events'),
-  ('suppliers', 'active', 'Rarely changes'),
-  ('product_categories', 'active', 'Rarely changes');
-
--- ============================================================================
 -- Decoration Surcharges (must be after product_categories)
 -- ============================================================================
 
