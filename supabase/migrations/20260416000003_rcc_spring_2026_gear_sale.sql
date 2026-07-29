@@ -127,10 +127,6 @@ BEGIN
   INSERT INTO price_rule_products (price_rule_id, product_id)
   SELECT v_rule_id, p.id FROM products p WHERE p.style_code = 'LW701';
 
-  -- Shorts - $15
-  INSERT INTO price_rules (org_id, event_id, description, override_price, priority, active)
-  VALUES (v_org_id, v_event_id, 'Shorts', 15.00, 0, true) RETURNING id INTO v_rule_id;
-  INSERT INTO price_rule_products (price_rule_id, product_id)
-  SELECT v_rule_id, p.id FROM products p WHERE p.style_code IN ('ST355', 'YST355');
+  -- (Shorts rule removed 2026-07-29 — Shorts dropped from the RCC store.)
 
 END $$;
