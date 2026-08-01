@@ -6,15 +6,37 @@ const PRINTERS = {
   "4x6": { host: "10.0.0.31", port: 9100 }
 }
 
-function sendZPL(host, port, zpl) {
+// One TCP attempt to the printer.
+function sendOnce(host, port, zpl) {
   return new Promise((resolve, reject) => {
     const client = new net.Socket()
     const timeout = setTimeout(() => { client.destroy(); reject(new Error("Timeout")) }, 5000)
+    let settled = false
+    const done = (fn, arg) => { if (settled) return; settled = true; clearTimeout(timeout); fn(arg) }
     client.connect(port, host, () => {
-      client.write(zpl, () => { clearTimeout(timeout); client.end(); resolve() })
+      client.write(zpl, () => { client.end(); done(resolve) })
     })
-    client.on("error", (err) => { clearTimeout(timeout); reject(err) })
+    client.on("error", (err) => { client.destroy(); done(reject, err) })
   })
+}
+
+// Zebra printers with WiFi power-save nap and refuse the first connect
+// (EHOSTUNREACH/ECONNREFUSED/timeout); the connection attempt itself wakes them.
+// Retry a few times with a short delay so a sleeping printer still prints.
+async function sendZPL(host, port, zpl, attempts = 4, delayMs = 1200) {
+  let lastErr
+  for (let n = 1; n <= attempts; n++) {
+    try {
+      await sendOnce(host, port, zpl)
+      if (n > 1) console.log(`[print] succeeded on attempt ${n} to ${host}:${port}`)
+      return
+    } catch (err) {
+      lastErr = err
+      console.warn(`[print] attempt ${n}/${attempts} to ${host}:${port} failed: ${err.message}`)
+      if (n < attempts) await new Promise(r => setTimeout(r, delayMs))
+    }
+  }
+  throw lastErr
 }
 
 const server = http.createServer(async (req, res) => {
@@ -38,7 +60,7 @@ const server = http.createServer(async (req, res) => {
       await sendZPL(target.host, target.port, zpl)
       console.log(`[print] ZPL sent to ${target.host}:${target.port} (${zpl.length} bytes)`)
       res.writeHead(200, { "Content-Type": "application/json" })
-      res.end(JSON.stringify({ success: true, message: "Label sent to ${target.host}:${target.port}" }))
+      res.end(JSON.stringify({ success: true, message: `Label sent to ${target.host}:${target.port}` }))
     } catch (err) {
       console.error("[print] Failed:", err.message)
       res.writeHead(500, { "Content-Type": "application/json" })
