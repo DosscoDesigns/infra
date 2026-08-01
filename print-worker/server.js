@@ -1,22 +1,33 @@
 import http from "http"
-import net from "net"
+import { spawn } from "child_process"
 
 const PRINTERS = {
   "4x2": { host: "10.0.0.32", port: 9100 },
   "4x6": { host: "10.0.0.31", port: 9100 }
 }
 
-// One TCP attempt to the printer.
+// One send attempt to the printer via /usr/bin/nc.
+//
+// IMPORTANT: we shell out to nc instead of using Node's net.Socket. On modern
+// macOS the Homebrew `node` binary is denied "Local Network" privacy access, so
+// its direct LAN connects fail with EHOSTUNREACH — while Apple's nc/curl are
+// allowed. Sending through nc (spawned per job) is the reliable path. This is
+// why prints broke while `nc host 9100` still worked by hand.
 function sendOnce(host, port, zpl) {
   return new Promise((resolve, reject) => {
-    const client = new net.Socket()
-    const timeout = setTimeout(() => { client.destroy(); reject(new Error("Timeout")) }, 2500)
-    let settled = false
-    const done = (fn, arg) => { if (settled) return; settled = true; clearTimeout(timeout); fn(arg) }
-    client.connect(port, host, () => {
-      client.write(zpl, () => { client.end(); done(resolve) })
+    const nc = spawn("/usr/bin/nc", ["-w", "6", host, String(port)])
+    let stderr = ""
+    const timeout = setTimeout(() => { nc.kill("SIGKILL"); reject(new Error("Timeout")) }, 8000)
+    nc.stderr.on("data", (d) => { stderr += d })
+    nc.on("error", (err) => { clearTimeout(timeout); reject(err) })
+    nc.on("close", (code) => {
+      clearTimeout(timeout)
+      if (code === 0) resolve()
+      else reject(new Error(`nc exit ${code}${stderr ? ": " + stderr.trim() : " (host unreachable?)"}`))
     })
-    client.on("error", (err) => { client.destroy(); done(reject, err) })
+    nc.stdin.on("error", () => {})   // ignore EPIPE if nc dies early
+    nc.stdin.write(zpl)
+    nc.stdin.end()
   })
 }
 
