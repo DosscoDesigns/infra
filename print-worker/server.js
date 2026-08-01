@@ -10,7 +10,7 @@ const PRINTERS = {
 function sendOnce(host, port, zpl) {
   return new Promise((resolve, reject) => {
     const client = new net.Socket()
-    const timeout = setTimeout(() => { client.destroy(); reject(new Error("Timeout")) }, 5000)
+    const timeout = setTimeout(() => { client.destroy(); reject(new Error("Timeout")) }, 2500)
     let settled = false
     const done = (fn, arg) => { if (settled) return; settled = true; clearTimeout(timeout); fn(arg) }
     client.connect(port, host, () => {
@@ -23,7 +23,7 @@ function sendOnce(host, port, zpl) {
 // Zebra printers with WiFi power-save nap and refuse the first connect
 // (EHOSTUNREACH/ECONNREFUSED/timeout); the connection attempt itself wakes them.
 // Retry a few times with a short delay so a sleeping printer still prints.
-async function sendZPL(host, port, zpl, attempts = 4, delayMs = 1200) {
+async function sendZPL(host, port, zpl, attempts = 3, delayMs = 600) {
   let lastErr
   for (let n = 1; n <= attempts; n++) {
     try {
