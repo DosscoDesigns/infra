@@ -16,6 +16,6 @@ src/bookkeeping/*
 !src/bookkeeping/__init__.py
 !src/bookkeeping/email_to_pdf.py
 !src/bookkeeping/create_invoice.py
-!src/bookkeeping/create_sanmar_expense.py
+!src/bookkeeping/book_expense.py
 !src/bookkeeping/match_sanmar_invoices.py
 !src/bookkeeping/list_uncleared.py
