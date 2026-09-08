@@ -23,4 +23,4 @@ launchctl enable "gui/$(id -u)/com.dosscodesigns.print-worker"
 
 echo "Installed. Verify:"
 echo "  launchctl print gui/$(id -u)/com.dosscodesigns.print-worker | head -20"
-echo "  curl -s http://localhost:3001/health"
+echo "  curl -s http://127.0.0.1:1530/health"
