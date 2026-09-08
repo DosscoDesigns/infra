@@ -21,12 +21,38 @@ const PER_ATTEMPT_TIMEOUT_MS = 8000
 const RETRY_DELAY_MS = 600
 const RETRY_BUDGET_MS = ATTEMPTS * PER_ATTEMPT_TIMEOUT_MS + (ATTEMPTS - 1) * RETRY_DELAY_MS
 
-const PORT = Number(process.env.PRINT_WORKER_PORT || 1530)
+// Numeric env parsing, deliberately strict.
+//
+// The obvious `Number(process.env.X || default)` is a trap and we hit two of
+// them. `Number("thirty")` is NaN, and `windowCount > NaN` is ALWAYS false — a
+// typo in the env file would silently switch the rate limiter off entirely,
+// which is the exact guard this file exists to add. `Number("")` is 0, so a
+// bare `X=` is masked by the `||` and falls through to the default instead.
+//
+// So: unset or empty means "use the default" (documented in env.example — to
+// disable printing set the cap to 0 explicitly, do not blank the line). Anything
+// else must parse as an integer >= min, or we record a config error and refuse
+// to print rather than guess. Failing closed on a config typo is the whole
+// point; a limiter that quietly stops limiting is worse than none.
+const CONFIG_ERRORS = []
+function envInt(name, fallback, min) {
+  const raw = process.env[name]
+  if (raw === undefined || raw.trim() === "") return fallback
+  const n = Number(raw)
+  if (!Number.isInteger(n) || n < min) {
+    CONFIG_ERRORS.push(`${name}="${raw}" is not an integer >= ${min}`)
+    return fallback
+  }
+  return n
+}
+
+const PORT = envInt("PRINT_WORKER_PORT", 1530, 1)
 const HOST = "127.0.0.1"          // loopback only; the tunnel is the front door
 const TOKEN = process.env.PRINT_WORKER_TOKEN || ""
 
 // Rate limit: printing burns physical stock, so the cap is deliberately low.
-const RATE_LIMIT_MAX = Number(process.env.PRINT_WORKER_RATE_MAX || 30)
+// 0 disables printing outright (every request 429s); it is the explicit switch.
+const RATE_LIMIT_MAX = envInt("PRINT_WORKER_RATE_MAX", 30, 0)
 const RATE_LIMIT_WINDOW_MS = 60_000
 let windowStart = Date.now()
 let windowCount = 0
@@ -91,6 +117,13 @@ async function sendZPL(host, port, zpl, attempts = ATTEMPTS, delayMs = RETRY_DEL
   throw lastErr
 }
 
+// One reason string covering every state in which we must not print.
+function degradedReason() {
+  if (CONFIG_ERRORS.length) return `bad configuration: ${CONFIG_ERRORS.join("; ")}`
+  if (!TOKEN) return "PRINT_WORKER_TOKEN is not set; printing is disabled"
+  return null
+}
+
 function json(res, status, body) {
   res.writeHead(status, { "Content-Type": "application/json" })
   res.end(JSON.stringify(body))
@@ -105,12 +138,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     // Open and unauthenticated by contract — cloudflared probes it, and it
     // discloses nothing but our own retry budget.
-    if (!TOKEN) {
-      return json(res, 503, {
-        status: "degraded",
-        reason: "PRINT_WORKER_TOKEN is not set; printing is disabled",
-        retryBudgetMs: RETRY_BUDGET_MS
-      })
+    const why = degradedReason()
+    if (why) {
+      return json(res, 503, { status: "degraded", reason: why, retryBudgetMs: RETRY_BUDGET_MS })
     }
     return json(res, 200, { status: "ok", retryBudgetMs: RETRY_BUDGET_MS })
   }
@@ -118,9 +148,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "POST" && req.url === "/print/zpl") {
     // Fail closed. A missing secret must never silently restore the open
     // endpoint this change exists to close.
-    if (!TOKEN) {
-      console.error("[print] refused: PRINT_WORKER_TOKEN is not set")
-      return json(res, 503, { error: "print worker is not configured (PRINT_WORKER_TOKEN unset)" })
+    const why = degradedReason()
+    if (why) {
+      console.error(`[print] refused: ${why}`)
+      return json(res, 503, { error: `print worker is not configured: ${why}` })
     }
     if (!tokenOk(req.headers["x-print-token"])) {
       console.warn("[print] refused: bad or missing X-Print-Token")
@@ -151,5 +182,6 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`Print worker listening on ${HOST}:${PORT} (retry budget ${RETRY_BUDGET_MS}ms)`)
+  for (const e of CONFIG_ERRORS) console.error(`[print] CONFIG ERROR: ${e} — printing is DISABLED`)
   if (!TOKEN) console.error("[print] WARNING: PRINT_WORKER_TOKEN is not set — printing is DISABLED until it is")
 })
