@@ -5,10 +5,21 @@
     <key>Label</key>
     <string>com.dosscodesigns.print-worker</string>
 
+    <!-- The token is a secret, so it cannot live in this file (which is in git).
+         It is sourced at launch from ~/.config/dd-print-worker/env (mode 600,
+         outside the repo), the same refresh-secrets/.env split the finance
+         session uses for YNAB. `op read` is deliberately NOT called here: the
+         1Password CLI daemon socket can hang when invoked from a launchd or
+         Claude-spawned subprocess, and a hang would leave printing dead with no
+         error. Populate the file from 1Password by hand or via a refresh script.
+
+         NOTE: /bin/bash on macOS is 3.2, not Homebrew's 5.x. Keep this line
+         simple enough for it. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/opt/homebrew/bin/node</string>
-        <string>/Users/jason/dev/dd/infra/print-worker/server.js</string>
+        <string>/bin/bash</string>
+        <string>-c</string>
+        <string>set -a; [ -f "$HOME/.config/dd-print-worker/env" ] &amp;&amp; . "$HOME/.config/dd-print-worker/env"; set +a; exec /opt/homebrew/bin/node /Users/jason/dev/dd/infra/print-worker/server.js</string>
     </array>
 
     <key>RunAtLoad</key>
