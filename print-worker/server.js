@@ -138,11 +138,26 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && req.url === "/health") {
     // Open and unauthenticated by contract — cloudflared probes it, and it
     // discloses nothing but our own retry budget.
+    // rateLimitMax is published so a caller can VERIFY the worker is in the
+    // state its test assumes, instead of proceeding on trust. It also makes the
+    // footgun visible: a worker left at cap 1 after a gate run is externally
+    // observable here, rather than being discovered by the next real order
+    // getting a 429. Nothing here is sensitive — without a token you cannot
+    // print at all, so the cap only means anything to someone who already has
+    // one.
+    // retryBudgetMs is always truthful: it is derived from the constants above
+    // and no env var can distort it. rateLimitMax is NOT published when the
+    // config is bad, because the value we would report is the fallback rather
+    // than what the operator set — and a plausible number that is not the real
+    // one is worse than no number. A caller that needs the cap must treat its
+    // absence as "unknown", never as a default.
     const why = degradedReason()
     if (why) {
-      return json(res, 503, { status: "degraded", reason: why, retryBudgetMs: RETRY_BUDGET_MS })
+      const body = { status: "degraded", reason: why, retryBudgetMs: RETRY_BUDGET_MS }
+      if (!CONFIG_ERRORS.length) body.rateLimitMax = RATE_LIMIT_MAX
+      return json(res, 503, body)
     }
-    return json(res, 200, { status: "ok", retryBudgetMs: RETRY_BUDGET_MS })
+    return json(res, 200, { status: "ok", retryBudgetMs: RETRY_BUDGET_MS, rateLimitMax: RATE_LIMIT_MAX })
   }
 
   if (req.method === "POST" && req.url === "/print/zpl") {
