@@ -27,7 +27,8 @@ cd ~/dev/dd  ──► direnv loads .envrc ──► OP_SERVICE_ACCOUNT_TOKEN ov
 
 | File | Committed? | Purpose |
 |---|---|---|
-| `~/dev/dd/.envrc` | **no** (gitignored) | Exports `OP_SERVICE_ACCOUNT_TOKEN` for DD work; loaded by direnv |
+| `~/.config/op/token-dd` | **no** (never in git) | The DD service-account token itself, mode 600. Single source — rotation touches only this file |
+| `~/dev/dd/.envrc` | **no** (gitignored) | Reads `~/.config/op/token-dd` and exports `OP_SERVICE_ACCOUNT_TOKEN`; loaded by direnv. Never inline the token here |
 | `~/dev/dd/dd/.env.template` | **yes** | Committed template with `op://` references for every env var |
 | `~/dev/dd/dd/.env` | **no** (gitignored) | Legacy — delete once template workflow verified |
 
@@ -65,10 +66,18 @@ brew install 1password-cli direnv
 echo 'eval "$(direnv hook zsh)"' >> ~/.zshrc
 source ~/.zshrc
 
-# 3. Create ~/dev/dd/.envrc with the DD service account token
-#    (Get token from 1Password: "1Password Service Account - DD Dev" or similar)
+# 3. Drop the DD service account token in ~/.config/op/token-dd
+#    (1Password: "1Password Service Account - DD DEV Vault", op://DEV/...)
+mkdir -p ~/.config/op && umask 077
+printf 'ops_...\n' > ~/.config/op/token-dd
+chmod 600 ~/.config/op/token-dd
+
+# 3b. Point ~/dev/dd/.envrc at it — the token is NEVER inlined in .envrc
 cat > ~/dev/dd/.envrc <<'EOF'
-export OP_SERVICE_ACCOUNT_TOKEN="ops_..."
+token_file="$HOME/.config/op/token-dd"
+if [ -f "$token_file" ]; then
+  export OP_SERVICE_ACCOUNT_TOKEN="$(cat "$token_file")"
+fi
 EOF
 chmod 600 ~/dev/dd/.envrc
 
@@ -132,7 +141,7 @@ The DD service account has **read-write** access to the `Dossco Designs LLC` vau
 
 If a machine is compromised or a token leaks, rotate in 1Password:
 1. 1Password web → Integrations → Service Accounts → DD Dev → Regenerate
-2. Update `~/dev/dd/.envrc` with the new token
+2. Overwrite `~/.config/op/token-dd` with the new token (mode 600) — `.envrc` needs no edit
 3. `direnv reload`
 
 ## Related
