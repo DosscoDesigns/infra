@@ -7,9 +7,12 @@
 # so replaying migration history does NOT reproduce prod. This copies prod's
 # `public` schema exactly (tables, functions, triggers, RLS, policies, grants).
 #
-# Data: catalog/config tables only. Deliberately NOT copied —
+# Data: catalog/config tables only. `boxes` (physical storage bins — number, label, location;
+# FKs only to orgs/events/itself, no PII) IS copied: inventory.box_id references it, and without
+# it any test that updates an inventory row twice in one transaction fails its FK re-check.
+# Deliberately NOT copied —
 #   customer PII:      customers, orders, order_items, payments, messages
-#   order-linked rows: boxes, order_item_batches, inventory_movements
+#   order-linked rows: order_item_batches, inventory_movements
 #   secrets:           integration_tokens (live QBO tokens), app_config
 #
 # DESTRUCTIVE TO LOCAL ONLY: drops and recreates local `public`. A backup of the
@@ -35,7 +38,7 @@ C=supabase_db_dd                      # use the container's pg_dump: it matches 
 OUT="${DD_TEMP:-$HOME/dev/dd/TEMP}/prod-pull-$(date +%Y%m%d-%H%M%S)"
 mkdir -p "$OUT"
 
-KEEP=(category_mappings coupons decoration_set_items decoration_sets decoration_surcharges
+KEEP=(boxes category_mappings coupons decoration_set_items decoration_sets decoration_surcharges
       decorations events inventory message_templates org_products orgs po_line_items
       price_rule_products price_rules pricing_config product_categories products
       purchase_orders suppliers tax_config variants vendor_price_tables
