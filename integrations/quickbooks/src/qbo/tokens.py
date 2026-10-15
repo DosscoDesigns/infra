@@ -72,10 +72,11 @@ def _op_read(ref: str) -> str:
 
 
 def _supabase_conf() -> tuple[str, str]:
-    """(url, service_role_key) from env, falling back to 1Password."""
+    """(url, secret key) from env, falling back to 1Password (dd#133: the
+    legacy service_role JWT was retired for an sb_secret_ key)."""
     url = os.environ.get("SUPABASE_URL") or _op_read(f"{SUPABASE_ITEM}/url")
     key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY") or _op_read(
-        f"{SUPABASE_ITEM}/service_role_key"
+        f"{SUPABASE_ITEM}/secret_key"
     )
     return url.rstrip("/"), key
 
@@ -117,11 +118,13 @@ class TokenManager:
 
     def _headers(self) -> dict:
         _, key = self._conf()
-        return {
-            "apikey": key,
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        }
+        headers = {"apikey": key, "Content-Type": "application/json"}
+        # Legacy service_role keys are JWTs and go on Authorization too. The
+        # new sb_secret_ keys are not JWTs; Supabase wants them on apikey only
+        # (dd#133 — legacy keys are being disabled).
+        if not key.startswith("sb_"):
+            headers["Authorization"] = f"Bearer {key}"
+        return headers
 
     def _read_row(self) -> dict:
         base, _ = self._conf()
