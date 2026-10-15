@@ -117,11 +117,13 @@ class TokenManager:
 
     def _headers(self) -> dict:
         _, key = self._conf()
-        return {
-            "apikey": key,
-            "Authorization": f"Bearer {key}",
-            "Content-Type": "application/json",
-        }
+        headers = {"apikey": key, "Content-Type": "application/json"}
+        # Legacy service_role keys are JWTs and go on Authorization too. The
+        # new sb_secret_ keys are not JWTs; Supabase wants them on apikey only
+        # (dd#133 — legacy keys are being disabled).
+        if not key.startswith("sb_"):
+            headers["Authorization"] = f"Bearer {key}"
+        return headers
 
     def _read_row(self) -> dict:
         base, _ = self._conf()
